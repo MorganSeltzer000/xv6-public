@@ -89,3 +89,13 @@ sys_uptime(void)
   release(&tickslock);
   return xticks;
 }
+
+int
+sys_setcolor(void)
+{
+  int fgcolor, bgcolor;
+  if(argint(0, &fgcolor) < 0 || argint(1, &bgcolor))
+    return -1;
+  consolesetcolor(fgcolor, bgcolor);
+  return 0;
+}

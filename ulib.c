@@ -57,6 +57,7 @@ gets(char *buf, int max)
 
   for(i=0; i+1 < max; ){
     cc = read(0, &c, 1);
+    printf(2, "cici=%d/%d|", c, cc);
     if(cc < 1)
       break;
     buf[i++] = c;

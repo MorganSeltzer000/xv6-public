@@ -18,6 +18,7 @@
 static void consputc(int);
 
 static int panicked = 0;
+static int colormask = 0x0700;
 
 static struct {
   struct spinlock lock;
@@ -125,6 +126,8 @@ panic(char *s)
 
 //PAGEBREAK: 50
 #define BACKSPACE 0x100
+#define KEY_LF 0x1E4
+#define KEY_RT 0x1E5
 #define CRTPORT 0x3d4
 static ushort *crt = (ushort*)P2V(0xb8000);  // CGA memory
 
@@ -141,10 +144,13 @@ cgaputc(int c)
 
   if(c == '\n')
     pos += 80 - pos%80;
-  else if(c == BACKSPACE){
-    if(pos > 0) --pos;
+  else if(c & 0x100){
+    if(c == BACKSPACE || c==KEY_LF){
+      if(pos > 0) --pos;
+    } else //is rewriting a key due to KEY_RT
+      pos++;
   } else
-    crt[pos++] = (c&0xff) | 0x0700;  // black on white
+    crt[pos++] = (c&0xff) | colormask;
 
   if(pos < 0 || pos > 25*80)
     panic("pos under/overflow");
@@ -159,7 +165,8 @@ cgaputc(int c)
   outb(CRTPORT+1, pos>>8);
   outb(CRTPORT, 15);
   outb(CRTPORT+1, pos);
-  crt[pos] = ' ' | 0x0700;
+  if(!(c & 0x100 && c != 0x100)) //if its not KEY_LF or KEY_RT
+    crt[pos] = ' ' | colormask;
 }
 
 void
@@ -173,9 +180,18 @@ consputc(int c)
 
   if(c == BACKSPACE){
     uartputc('\b'); uartputc(' '); uartputc('\b');
+  } else if(c == KEY_LF){
+    uartputc('\b');
   } else
     uartputc(c);
   cgaputc(c);
+}
+
+void
+consolesetcolor(int fgcolor, int bgcolor) {
+  if(fgcolor>7 || bgcolor>7) //color is too high
+    return; //don't set anything
+  colormask = fgcolor << 8 | bgcolor << 12;
 }
 
 #define INPUT_BUF 128
@@ -183,7 +199,8 @@ struct {
   char buf[INPUT_BUF];
   uint r;  // Read index
   uint w;  // Write index
-  uint e;  // Edit index
+  uint e;  // Edit index (furthest char edited)
+  uint p;  // Cursor offset (how far left from e)
 } input;
 
 #define C(x)  ((x)-'@')  // Control-x
@@ -213,15 +230,29 @@ consoleintr(int (*getc)(void))
         consputc(BACKSPACE);
       }
       break;
+    case KEY_LF:
+      if(input.e-input.p != input.w){
+        input.p++;
+        consputc(KEY_LF);
+      }
+      break;
+    case KEY_RT:
+      if(input.p>0){
+        // rewrite previous char
+        consputc(0x100 | (input.buf[(input.e - --input.p - 1) % INPUT_BUF]));
+      }
+      break;
     default:
-      if(c != 0 && input.e-input.r < INPUT_BUF){
+      if(c != 0 && input.e-input.p-input.r < INPUT_BUF){
         c = (c == '\r') ? '\n' : c;
-        input.buf[input.e++ % INPUT_BUF] = c;
-        consputc(c);
         if(c == '\n' || c == C('D') || input.e == input.r+INPUT_BUF){
+          input.buf[input.e++ % INPUT_BUF] = c;//not offset by p, since newline
           input.w = input.e;
+          input.p = 0;
           wakeup(&input.r);
         }
+        input.buf[(input.e++ - input.p) % INPUT_BUF] = c;
+        consputc(c);
       }
       break;
     }

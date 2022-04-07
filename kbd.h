@@ -16,6 +16,7 @@
 
 #define E0ESC           (1<<6)
 
+#define SPECIALKEY          0x100    // 'or'ed with special keys not in ascii
 // Special keycodes
 #define KEY_HOME        0xE0
 #define KEY_END         0xE1
@@ -109,4 +110,3 @@ static uchar ctlmap[256] =
   [0x97] KEY_HOME,  [0xCF] KEY_END,
   [0xD2] KEY_INS,   [0xD3] KEY_DEL
 };
-
