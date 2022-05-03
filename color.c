@@ -3,7 +3,7 @@
 
 int main(int argc, char **argv)
 {
-  int fgcolor, bgcolor;
+  uint fgcolor, bgcolor;
   if(argc>2){
     fgcolor = atoi(argv[1]);//will set to 0 if non-number
     bgcolor = atoi(argv[2]);

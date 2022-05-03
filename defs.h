@@ -21,7 +21,7 @@ void            consoleinit(void);
 void            cprintf(char*, ...);
 void            consoleintr(int(*)(void));
 void            panic(char*) __attribute__((noreturn));
-void            consolesetcolor(int, int);
+void            consolesetcolor(uint, uint);
 
 // exec.c
 int             exec(char*, char**);

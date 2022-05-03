@@ -69,15 +69,20 @@ uartgetc(void)
     return -1;
   if(!(inb(COM1+5) & 0x01))
     return -1;
-  //similar to how kbd.c handles sequences
+  // similar to how kbd.c handles sequences
   int c = inb(COM1+0);
   if(escape == 3) {
     escape = 0;
     if(c>=0x40 && c<=0x7F)
       c = escapemap[c-ESCAPEMAPSTART] | SPECIALKEY;
-  } else if(escape==1 && c==0x5b) {
-    escape = 3;
-    return 0;
+  } else if(escape==1) {
+    if(c==0x5b) {
+      escape = 3;
+      return 0;
+    } else {
+      escape = 0;
+      return 0;
+    }
   } else if (c==0x1b) {
     escape = 1;
     return 0;
