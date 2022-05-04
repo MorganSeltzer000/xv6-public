@@ -333,6 +333,17 @@ sys_open(void)
 }
 
 int
+sys_lseek(void)
+{
+  struct file *f;
+  int offset;
+  if(argfd(0, 0, &f) < 0 || argint(1, &offset) < 0 || offset < 0)
+    return -1;
+  f->off = offset; // its allowed to go beyond file size just like normal lseek
+  return 0;
+}
+
+int
 sys_mkdir(void)
 {
   char *path;

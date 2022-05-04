@@ -22,6 +22,9 @@ void            cprintf(char*, ...);
 void            consoleintr(int(*)(void));
 void            panic(char*) __attribute__((noreturn));
 void            consolesetcolor(uint, uint);
+void            consolesetpos(uint, uint);
+void            consclearscreen(void);
+int             consgetcgamem(char*, int);
 
 // exec.c
 int             exec(char*, char**);

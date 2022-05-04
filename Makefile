@@ -169,6 +169,7 @@ UPROGS=\
 	_cat\
 	_color\
 	_echo\
+	_editor\
 	_forktest\
 	_grep\
 	_init\
@@ -177,6 +178,7 @@ UPROGS=\
 	_ls\
 	_mkdir\
 	_rm\
+	_screensaver\
 	_sh\
 	_stressfs\
 	_usertests\

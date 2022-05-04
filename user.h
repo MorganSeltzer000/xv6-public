@@ -24,6 +24,11 @@ char* sbrk(int);
 int sleep(int);
 int uptime(void);
 int setcolor(uint, uint);
+int setpos(uint, uint);
+int getpos(uint, uint);
+int clearscr(void);
+int lseek(int, int);
+int getcgamem(char*, int);
 
 // ulib.c
 int stat(const char*, struct stat*);
@@ -38,3 +43,4 @@ void* memset(void*, int, uint);
 void* malloc(uint);
 void free(void*);
 int atoi(const char*);
+uint rand(void);

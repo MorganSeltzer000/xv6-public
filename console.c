@@ -19,6 +19,7 @@ static void consputc(int);
 
 static int panicked = 0;
 static int colormask = 0x0700;
+static int uartypos, uartxpos;
 
 static struct {
   struct spinlock lock;
@@ -126,17 +127,20 @@ panic(char *s)
 
 //PAGEBREAK: 50
 #define BACKSPACE 0x101 //not 0x100 because if ansi escape undefined its 0x100
-#define KEY_UP 0x1E2
-#define KEY_DN 0x1E3
-#define KEY_LF 0x1E4
-#define KEY_RT 0x1E5
-#define CRTPORT 0x3d4
+#define KEY_HOME 0x1E0
+#define KEY_END  0x1E1
+#define KEY_UP   0x1E2
+#define KEY_DN   0x1E3
+#define KEY_LF   0x1E4
+#define KEY_RT   0x1E5
+#define KEY_DEL  0x1E9
+#define CRTPORT  0x3d4
 
 #define getcgapos(pos) outb(CRTPORT, 14);\
   pos = inb(CRTPORT+1) << 8;\
   outb(CRTPORT, 15);\
   pos |= inb(CRTPORT+1);
-#define putcgapos(pos) outb(CRTPORT, 14);\
+#define setcgapos(pos) outb(CRTPORT, 14);\
   outb(CRTPORT+1, (pos)>>8);\
   outb(CRTPORT, 15);\
   outb(CRTPORT+1, (pos));
@@ -183,6 +187,27 @@ cgaputc(int c)
     crt[pos] = ' ' | colormask;
 }
 
+int
+consgetcgamem(char* buf, int bufsize)
+{
+  int sizediff = sizeof(short)/sizeof(char);
+  if(bufsize < sizeof(crt)/sizediff)
+    return -1;
+  acquire(&cons.lock);
+  //same code as memmove, but diff sizes, and newline
+  char *crtpoint = (char*)crt;
+  if(crtpoint < buf && buf + bufsize > crtpoint){
+    crtpoint += sizediff;
+    buf += 1;
+    while(bufsize-- > 0)
+      *--buf = *--crtpoint;
+  } else
+    while(bufsize-- > 0)
+      *buf++ = *crtpoint++;
+  release(&cons.lock);
+  return 0;
+}
+
 void
 consputc(int c)
 {
@@ -211,7 +236,7 @@ consputc(int c)
   uartputc('0' + x % 10);
 
 void
-consmoveup(int amount)
+consmoveup(uint amount)
 {
   uartputc(0x1b);
   uartputc(0x5b);
@@ -223,7 +248,7 @@ consmoveup(int amount)
 
 //note this does not scroll the screen down
 void
-consmovedown(int amount)
+consmovedown(uint amount)
 {
   int pos;
   uartputc(0x1b);
@@ -236,7 +261,55 @@ consmovedown(int amount)
   else
     pos = 80*24 + pos%80;
   checkcgabounds(pos);
-  putcgapos(pos);
+  setcgapos(pos);
+}
+
+void
+consmoveleft(uint amount)
+{
+  int pos;
+  uartputc(0x1b);
+  uartputc(0x5b);
+  uarthundred(amount);
+  uartputc('D');
+  getcgapos(pos);
+  if(amount>pos%80)
+    pos-=pos%80;
+  else
+    pos-=amount;
+  checkcgabounds(pos);
+  setcgapos(pos);
+}
+
+void
+consmoveright(uint amount)
+{
+  int pos;
+  uartputc(0x1b);
+  uartputc(0x5b);
+  uarthundred(amount);
+  uartputc('C');
+  getcgapos(pos);
+  if(pos%80+amount>=80)
+    pos += 79 - pos%80;
+  else
+    pos += amount;
+  checkcgabounds(pos);
+  setcgapos(pos);
+}
+
+void
+consbacktab(int amount)
+{
+  int pos;
+  uartputc(0x1b);
+  uartputc(0x5b);
+  uarthundred(amount);
+  uartputc('Z');
+  getcgapos(pos);
+  while(pos > 0 && amount-- > 0)
+    crt[--pos] = ' '; //overwrite tab with space
+  setcgapos(pos);
 }
 
 // does not change cursor position
@@ -245,16 +318,30 @@ consclearscreen()
 {
   uartputc(0x1b);
   uartputc(0x5b);
-  uartputc('0'+2);
+  uartputc('2');
+  uartputc('J');
+  acquire(&cons.lock);
+  for(int i=0; i<80*25; i++)
+    crt[i] = 0;
+  release(&cons.lock);
+}
+
+//clears from pos to end of screen
+void
+consclearend()
+{
+  uartputc(0x1b);
+  uartputc(0x5b);
+  uartputc('0');
   uartputc('J');
   //todo for cga, set everything in array to 0
 }
 
 void
-consmovepos(uint y, uint x)
+consolesetpos(uint y, uint x)
 {
   if(y>24)
-	  y=24;
+    y=24;
   x=x%80; //this is done for cga, uart doesn't care
   uartputc(0x1b);
   uartputc(0x5b);
@@ -262,7 +349,19 @@ consmovepos(uint y, uint x)
   uartputc(';');
   uarthundred(x);
   uartputc('H');
-  putcgapos(y*80+x);
+  setcgapos(y*80+x);
+}
+
+void
+consgetpos(int * y, int * x)
+{
+  uartputc(0x1b);
+  uartputc(0x5b);
+  uartputc('6');
+  uartputc('n');
+  //todo: wait until pos is updated
+  *y = uartypos;
+  *x = uartxpos;
 }
 
 void
@@ -290,15 +389,144 @@ struct {
 } input;
 
 #define C(x)  ((x)-'@')  // Control-x
+#define arraytonum(arr, len) if(len==0) 0\
+  else if(len==1) arr[0]\
+  else if(len==2) arr[1]*10+arr[0]\
+  else if(len==3) arr[2]*100+arr[1]*10+arr[0]
 
 void
 consoleintr(int (*getc)(void))
 {
+  static uchar controlparse = 0; //if parsing ANSI escape, 0=no,1=esc(potential parse),3=esc[parsing
+  static uchar param[4]; //parameter bytes for ANSI escape
+  static uchar parampos = 0; //needs to be array for 0,0 args
   int c, doprocdump = 0, tmp_p = 0;
 
   acquire(&cons.lock);
   while((c = getc()) >= 0){
+    if(controlparse>=3){
+      if(c>=0x30 && c<=0x39 && parampos<3)
+        param[parampos] = (param[parampos]*10) + c - 0x30;
+      else if(c==0x3b) //semicolon, delimits params
+        parampos++;
+      else if(c>=0x40 && c<=0x7F){
+        if(controlparse==4){//uart is giving pos info
+          if(parampos>1 && c=='R'){// format for pos info
+            uartypos = param[0];
+            uartxpos = param[1];
+          }
+        } else{
+        switch(c){
+        case 'A': // move UP
+          if(parampos>0)
+            consmoveup(param[0]);
+          else
+            consmoveup(1);
+          break;
+        case 'B': // move DOWN
+          if(parampos>0)
+            consmovedown(param[0]);
+          else
+            consmovedown(1);
+          break;
+        case 'C': // move RT
+          if(parampos>0){
+            if(param[0]>input.p){
+              consmoveright(input.p);
+              input.p=0;
+            } else {
+              consmoveright(param[0]);
+              input.p-=param[0];
+            }
+          } else{
+            if(input.p>0){
+              consmoveright(1);
+              input.p--;
+            }
+          }
+          break;
+        case 'D': //move LF
+          if(parampos==0){
+            if(input.e-input.p != input.w){
+              consmoveleft(1);
+              input.p++;
+            }
+          } else if(input.e-input.p-param[0]<input.w){
+            consmoveleft(param[0]);
+            input.p += param[0];
+          } else {
+            consmoveleft(input.e-input.w-input.p); // how far it is to end of screen
+            input.p = input.e - input.w;
+          }
+          break;
+        case 'Z': // back tab
+          //doing things here since no reason to call if a func
+          //only works currently if prev key was tab
+          input.e--;
+          input.buf[input.e%INPUT_BUF] = ' ';
+          uartputc(0x1b);
+          uartputc(0x5b);
+          if(parampos==0 || param[0]==1){
+            consbacktab(1);
+          } else{
+            consbacktab(param[0]);
+          }
+          break;
+        case 'J': // clear screen
+          if(parampos==0 || param[0]==0)//default is 0
+            consclearend();//clear from here to end of screen
+          else if(param[0]==1)
+            ;//clear from start of screen to here
+          else if(param[0]==2)
+            consclearscreen();
+          else //incorrect arg, same as default
+            consclearend();//clear from here to end of screen
+          break;
+        case 'H':
+          if(parampos==0)
+            consolesetpos(1, 1);
+          else if(parampos==1)
+            consolesetpos(param[0], 1);
+          else
+            consolesetpos(param[0], param[1]);
+          break;
+        case 'n':
+          if(parampos>0 && param[0]==6){
+            //todo: capture next few inputs
+           }
+          break;
+        }
+        }
+        parampos = 0;
+        controlparse = 0;
+      }
+    } else{
     switch(c){
+    //case 'z': //testing only
+      //uartputc(0x1b);
+      //consmoveup(2);
+      //consolesetcolor(2, 5);
+      //consputc('a');
+      //consolesetcolor(1, 6);
+      //consputc('b');
+      //break;
+    //case 'y': //testing only
+      //uartputc(0x1b);
+      //uartputc(0x5b);
+      //consmovedown(2);
+      //consmovepos(5, 10);
+      //uartputc(162);
+      //break;
+    case 0x1b: // escape, potential start of ANSI escape
+      if(controlparse==0){
+        controlparse = 1;
+        break;
+      }
+    case 0x5b: // [, potential middle of ANSI escape
+      if(controlparse==1){
+        controlparse = 3;
+        break;
+      }
     case C('P'):  // Process listing.
       // procdump() locks cons.lock indirectly; invoke later
       doprocdump = 1;
@@ -317,13 +545,20 @@ consoleintr(int (*getc)(void))
     case C('H'): case '\x7f':  // Backspace
       if(input.e == input.w || input.e - input.p == input.w)
         break;
-      if(input.p == 0)
-        consputc(BACKSPACE);
-      else{
+      if(input.p == 0){
+        if(input.buf[(input.e-1)%INPUT_BUF] == '\t')
+          consbacktab(1);
+        else
+          consputc(BACKSPACE);
+      } else{
         tmp_p = input.p;
         consputc(KEY_LF);
         while(input.p > 0){ // have to shift chars over by 1
-          consputc(input.buf[input.e - input.p - 1]=input.buf[input.e - input.p]);
+        input.buf[(input.e-input.p-1) % INPUT_BUF]=input.buf[(input.e-input.p) % INPUT_BUF];
+          if(input.buf[(input.e-input.p-1) % INPUT_BUF]=='\t')
+            consbacktab(1);
+          else
+            consputc(input.buf[(input.e - input.p - 1) % INPUT_BUF]);
           input.p--;
         }
         consputc(' '); //overwrite last char
@@ -340,11 +575,37 @@ consoleintr(int (*getc)(void))
         consputc(KEY_LF);
       }
       break;
+    case KEY_HOME:
+      while(input.e-input.p != input.w){
+        input.p++;
+        consputc(KEY_LF);
+      }
+      break;
     case KEY_RT:
       if(input.p>0){
         // rewrite previous char
         consputc(0x100 | (input.buf[(input.e - --input.p - 1) % INPUT_BUF]));
       }
+      break;
+    case KEY_END:
+      while(input.p>0){
+        // rewrite previous char
+        consputc(0x100 | (input.buf[(input.e - --input.p - 1) % INPUT_BUF]));
+      }
+      break;
+    case KEY_DEL: //similar logic to backspace, but delete at position
+      if(input.p != 0){
+        tmp_p = input.p;
+        while(--input.p > 0){ // have to shift chars over by 1
+          consputc(input.buf[(input.e - input.p - 1) % INPUT_BUF]=input.buf[(input.e - input.p) % INPUT_BUF]);
+        }
+        consputc(' '); //overwrite last char
+        input.p = tmp_p - 1;
+        while(tmp_p-- > 0){
+          consputc(KEY_LF); //moves back to starting pos
+        }
+      }
+      input.e--;
       break;
     default: //current
       if(c != 0 && input.e - input.p - input.r < INPUT_BUF){
@@ -367,6 +628,7 @@ consoleintr(int (*getc)(void))
         }
       }
       break;
+    }
     }
   }
   release(&cons.lock);

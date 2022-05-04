@@ -104,3 +104,11 @@ memmove(void *vdst, const void *vsrc, int n)
     *dst++ = *src++;
   return vdst;
 }
+
+uint
+rand(void)
+{
+  static unsigned long randstate = 1;
+  randstate = randstate * 1664525 + 1013904223;
+  return randstate;
+}

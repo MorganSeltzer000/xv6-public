@@ -99,3 +99,42 @@ sys_setcolor(void)
   consolesetcolor(fgcolor, bgcolor);
   return 0;
 }
+
+int
+sys_setpos(void)
+{
+  int y, x;
+  if(argint(0, &y) < 0 || argint(1, &x))
+    return -1;
+  consolesetpos(y, x);
+  return 0;
+}
+
+int
+sys_getpos(void)
+{
+	/*
+  int * y, x;
+  if(argptr(0, &y, sizeof(int)) < 0 || argptr(1, &x, sizeof(int)))
+    return -1;
+  consolegetpos(&y, &x);
+  return 0;*/
+	return 0;
+}
+
+int
+sys_clearscr(void)
+{
+  consclearscreen();
+  return 0;
+}
+
+int
+sys_getcgamem(void)
+{
+  char * buf;
+  int size;
+  if(argint(1, &size) < 0 || argptr(0, &buf, size) < 0)
+    return -1;
+  return consgetcgamem(buf, size);
+}
