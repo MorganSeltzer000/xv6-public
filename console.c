@@ -196,8 +196,8 @@ consgetcgamem(char* buf, int bufsize)
   acquire(&cons.lock);
   int iter = 0;
   while(iter<bufsize) {
-	  buf[iter] = (char) crt[iter];
-	  iter++;
+    buf[iter] = (char) crt[iter];
+    iter++;
   }
   release(&cons.lock);
   return 0;
@@ -315,21 +315,36 @@ consclearscreen()
   uartputc(0x5b);
   uartputc('2');
   uartputc('J');
-  acquire(&cons.lock);
   for(int i=0; i<80*25; i++)
-    crt[i] = 0;
-  release(&cons.lock);
+    crt[i] = ' ';
 }
 
 //clears from pos to end of screen
 void
 consclearend()
 {
+  int pos;
   uartputc(0x1b);
   uartputc(0x5b);
   uartputc('0');
   uartputc('J');
-  //todo for cga, set everything in array to 0
+  getcgapos(pos);
+  for(int i=pos; i<80*25; i++)
+    crt[i] = 0;
+}
+
+// clears from 0 to current pos
+void
+consclearstartpos()
+{
+  int pos;
+  uartputc(0x1b);
+  uartputc(0x5b);
+  uartputc('1');
+  uartputc('J');
+  getcgapos(pos);
+  for(int i=0; i<=pos && i<80*25; i++)
+    crt[i] = 0;
 }
 
 void
@@ -337,7 +352,7 @@ consolesetpos(uint y, uint x)
 {
   if(y>24)
     y=24;
-  x=x%80; //this is done for cga, uart doesn't care
+  x=x%80; // this is done for cga, uart doesn't care
   uartputc(0x1b);
   uartputc(0x5b);
   uarthundred(y);
@@ -354,7 +369,7 @@ consgetpos(int * y, int * x)
   uartputc(0x5b);
   uartputc('6');
   uartputc('n');
-  //todo: wait until pos is updated
+  // todo: wait until pos is updated
   *y = uartypos;
   *x = uartxpos;
 }
@@ -392,21 +407,28 @@ struct {
 void
 consoleintr(int (*getc)(void))
 {
-  static uchar controlparse = 0; //if parsing ANSI escape, 0=no,1=esc(potential parse),3=esc[parsing
-  static uchar param[4]; //parameter bytes for ANSI escape
-  static uchar parampos = 0; //needs to be array for 0,0 args
+  // if parsing ANSI escape, 0=no,1=esc(potential parse),3=esc[parsing
+  static uchar controlparse = 0; 
+  static uchar param[4]; // parameter bytes for ANSI escape
+  static uchar parampos = 0; // needs to be array for 0,0 args
   int c, doprocdump = 0, tmp_p = 0;
 
   acquire(&cons.lock);
   while((c = getc()) >= 0){
     if(controlparse>=3){
-      if(c>=0x30 && c<=0x39 && parampos<3)
-        param[parampos] = (param[parampos]*10) + c - 0x30;
-      else if(c==0x3b) //semicolon, delimits params
+      if(c>=0x30 && c<=0x39 && parampos<3){
+        if(parampos==0){
+          param[parampos] = 0;
+          parampos++;
+        }
+        param[parampos-1] = (param[parampos-1]*10) + c - 0x30;
+      } else if(c==0x3b){ // semicolon, delimits params
+        param[parampos] = 0;
         parampos++;
+      }
       else if(c>=0x40 && c<=0x7F){
-        if(controlparse==4){//uart is giving pos info
-          if(parampos>1 && c=='R'){// format for pos info
+        if(controlparse==4){ // uart is giving pos info
+          if(parampos>1 && c=='R'){ // format for pos info
             uartypos = param[0];
             uartxpos = param[1];
           }
@@ -440,13 +462,13 @@ consoleintr(int (*getc)(void))
             }
           }
           break;
-        case 'D': //move LF
+        case 'D': // move LF
           if(parampos==0){
             if(input.e-input.p != input.w){
               consmoveleft(1);
               input.p++;
             }
-          } else if(input.e-input.p-param[0]<input.w){
+          } else if(input.e-input.p-param[0] < input.w){
             consmoveleft(param[0]);
             input.p += param[0];
           } else {
@@ -455,8 +477,8 @@ consoleintr(int (*getc)(void))
           }
           break;
         case 'Z': // back tab
-          //doing things here since no reason to call if a func
-          //only works currently if prev key was tab
+          // doing things here since no reason to call if a func
+          // only works currently if prev key was tab
           input.e--;
           input.buf[input.e%INPUT_BUF] = ' ';
           uartputc(0x1b);
@@ -468,14 +490,15 @@ consoleintr(int (*getc)(void))
           }
           break;
         case 'J': // clear screen
-          if(parampos==0 || param[0]==0)//default is 0
-            consclearend();//clear from here to end of screen
+          if(parampos==0 || param[0]==0) // default is 0
+            consclearend(); // clear from here to end of screen
           else if(param[0]==1)
-            ;//clear from start of screen to here
+            consclearstartpos(); // clear from start of screen to here
           else if(param[0]==2)
             consclearscreen();
-          else //incorrect arg, same as default
-            consclearend();//clear from here to end of screen
+          else{
+            consclearend(); //clear from here to end of screen
+    }
           break;
         case 'H':
           if(parampos==0)
@@ -487,8 +510,8 @@ consoleintr(int (*getc)(void))
           break;
         case 'n':
           if(parampos>0 && param[0]==6){
-            //todo: capture next few inputs
-           }
+            controlparse = 4; //next few inputs are pos info
+          }
           break;
         }
         }
@@ -497,21 +520,6 @@ consoleintr(int (*getc)(void))
       }
     } else{
     switch(c){
-    //case 'z': //testing only
-      //uartputc(0x1b);
-      //consmoveup(2);
-      //consolesetcolor(2, 5);
-      //consputc('a');
-      //consolesetcolor(1, 6);
-      //consputc('b');
-      //break;
-    //case 'y': //testing only
-      //uartputc(0x1b);
-      //uartputc(0x5b);
-      //consmovedown(2);
-      //consmovepos(5, 10);
-      //uartputc(162);
-      //break;
     case 0x1b: // escape, potential start of ANSI escape
       if(controlparse==0){
         controlparse = 1;

@@ -25,7 +25,6 @@ int sleep(int);
 int uptime(void);
 int setcolor(uint, uint);
 int setpos(uint, uint);
-int getpos(uint, uint);
 int clearscr(void);
 int lseek(int, int);
 int getcgamem(char*, int);

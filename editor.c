@@ -17,7 +17,8 @@ void close_exit(int fd)
 
 void readpage(int fd, int pagenum) {
   int n;
-  setpos(0,0);
+  setpos(0, 0);
+  clearscr();
   if(lseek(fd, PAGESIZE * (pagenum)) < 0){
     printf(1, "editor: unable to change pos in file\n");
     close_exit(fd);
@@ -27,12 +28,11 @@ void readpage(int fd, int pagenum) {
       printf(1, "editor: write to screen error\n");
       close_exit(fd);
     }
-  } else { //nothing to be read, clear screen
-    clearscr();
+  } else{ //nothing to be read, make sure they know its a new page
     setpos(LASTROW, 0);
     printf(1, "New page");
-    setpos(0, 0);
   }
+  setpos(0, 0);
 }
 
 void writepage(int fd, int pagenum)
@@ -46,24 +46,23 @@ void writepage(int fd, int pagenum)
     close_exit(fd);
   }
 
-  //replace newlines with spaces, to not mess up printing
+  // replace newlines with spaces, to not mess up printing
   for(int i=0; i<PAGESIZE; i++){
     if(buf[i]=='\n') {
       while(i%PAGEWIDTH != PAGEWIDTH-1){
         buf[i++] = ' ';
       }
     }
-    if(i%PAGEWIDTH == PAGEWIDTH/2)
-      buf[i]='\n'; //still need a newline at end of lines
+    if(i%PAGEWIDTH == PAGEWIDTH-1)
+      buf[i]='\n'; // still need a newline at end of lines
   }
   write(fd, buf, PAGESIZE);
 }
 
-//had the idea to create a text editor
+// had the idea to create a text editor
 int main(int argc, char **argv)
 {
   int fd;
-  //int editmode;//editmode is view or write?
   if(argc==1){ // no file selected
     printf(1, "editor: usage is editor [filename]\n");
     exit();
@@ -83,7 +82,7 @@ int main(int argc, char **argv)
   while(1){
     while(1){
       read(0, &c, 1); //reads in chars
-      if(c == ':') //replace with esc later
+      if(c == ':')
         break;
     }
     read(0, &c, 1);
@@ -99,6 +98,7 @@ int main(int argc, char **argv)
       if(currpage==0){
         setpos(LASTROW, 0);
         printf(1, "Can't go below page 0");
+        setpos(0, 0);
       } else{
         writepage(fd, currpage);
         readpage(fd, --currpage);

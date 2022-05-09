@@ -111,18 +111,6 @@ sys_setpos(void)
 }
 
 int
-sys_getpos(void)
-{
-	/*
-  int * y, x;
-  if(argptr(0, &y, sizeof(int)) < 0 || argptr(1, &x, sizeof(int)))
-    return -1;
-  consolegetpos(&y, &x);
-  return 0;*/
-	return 0;
-}
-
-int
 sys_clearscr(void)
 {
   consclearscreen();
