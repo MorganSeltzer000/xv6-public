@@ -3,10 +3,9 @@
 #include "fcntl.h"
 
 #define FULLPAGESIZE (80*25)
-#define PAGESIZE (80*24) //so can print messages on last row
+#define PAGESIZE (80*23) //so can print messages on last row
 #define PAGEWIDTH 80
-#define LASTROW 24 //where messages are printed
-#define MESSAGESPACE 80
+#define LASTROW 23 //where messages are printed
 
 char buf[FULLPAGESIZE];
 
@@ -14,6 +13,26 @@ void close_exit(int fd)
 {
   close(fd);
   exit();
+}
+
+void readpage(int fd, int pagenum) {
+  int n;
+  setpos(0,0);
+  if(lseek(fd, PAGESIZE * (pagenum)) < 0){
+    printf(1, "editor: unable to change pos in file\n");
+    close_exit(fd);
+  }
+  if((n = read(fd, buf, PAGESIZE)) > 0){
+    if(write(1, buf, n) != n){
+      printf(1, "editor: write to screen error\n");
+      close_exit(fd);
+    }
+  } else { //nothing to be read, clear screen
+    clearscr();
+    setpos(LASTROW, 0);
+    printf(1, "New page");
+    setpos(0, 0);
+  }
 }
 
 void writepage(int fd, int pagenum)
@@ -26,13 +45,15 @@ void writepage(int fd, int pagenum)
     printf(1, "editor: unable to read cga mem\n");
     close_exit(fd);
   }
+
   //replace newlines with spaces, to not mess up printing
   for(int i=0; i<PAGESIZE; i++){
-    if(buf[i]=='\n')
+    if(buf[i]=='\n') {
       while(i%PAGEWIDTH != PAGEWIDTH-1){
         buf[i++] = ' ';
       }
-    if(i%PAGEWIDTH == PAGEWIDTH-1)
+    }
+    if(i%PAGEWIDTH == PAGEWIDTH/2)
       buf[i]='\n'; //still need a newline at end of lines
   }
   write(fd, buf, PAGESIZE);
@@ -41,7 +62,7 @@ void writepage(int fd, int pagenum)
 //had the idea to create a text editor
 int main(int argc, char **argv)
 {
-  int fd; 
+  int fd;
   //int editmode;//editmode is view or write?
   if(argc==1){ // no file selected
     printf(1, "editor: usage is editor [filename]\n");
@@ -55,16 +76,7 @@ int main(int argc, char **argv)
     exit(); // unable to create file
   }
 
-  //do stuff
-  int n;
-  //allow arrows to move across row since it sees the row is filled
-  setpos(0,0);
-  if((n = read(fd, buf, sizeof(buf))) > 0){
-    if(write(1, buf, n) != n){
-      printf(1, "editor: write to screen error\n");
-      exit();
-    }
-  }
+  readpage(fd, 0);
 
   int currpage = 0;
   uchar c;
@@ -79,24 +91,17 @@ int main(int argc, char **argv)
       close_exit(fd);
     else if(c=='x')
       break;
-    else if(c=='n'){//next page
-      //first write all the data
-      writepage(fd, currpage);
-      if(lseek(fd, PAGESIZE * (++currpage)) < 0){
-        printf(1, "editor: unable to change pos in file\n");
-        close_exit(fd);
-      }
-    } else if(c=='p'){//previous page
+    else if(c=='n'){ //next page
+      writepage(fd, currpage); //first write all the data
+      readpage(fd, ++currpage);
+    } else if(c=='p'){ //previous page
       writepage(fd, currpage);
       if(currpage==0){
         setpos(LASTROW, 0);
         printf(1, "Can't go below page 0");
       } else{
         writepage(fd, currpage);
-        if(lseek(fd, PAGESIZE * (--currpage)) < 0){
-          printf(1, "editor: unable to change pos in file\n");
-          close_exit(fd);
-        }
+        readpage(fd, --currpage);
       }
     }
   }
@@ -104,6 +109,6 @@ int main(int argc, char **argv)
   writepage(fd, currpage);
   close(fd);
   clearscr();
-  setpos(0,0);
+  setpos(0, 0);
   exit();
 }

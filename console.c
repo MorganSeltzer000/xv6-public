@@ -194,16 +194,11 @@ consgetcgamem(char* buf, int bufsize)
   if(bufsize < sizeof(crt)/sizediff)
     return -1;
   acquire(&cons.lock);
-  //same code as memmove, but diff sizes, and newline
-  char *crtpoint = (char*)crt;
-  if(crtpoint < buf && buf + bufsize > crtpoint){
-    crtpoint += sizediff;
-    buf += 1;
-    while(bufsize-- > 0)
-      *--buf = *--crtpoint;
-  } else
-    while(bufsize-- > 0)
-      *buf++ = *crtpoint++;
+  int iter = 0;
+  while(iter<bufsize) {
+	  buf[iter] = (char) crt[iter];
+	  iter++;
+  }
   release(&cons.lock);
   return 0;
 }
